@@ -1,10 +1,13 @@
 package com.waageweb.sunshine.app;
 
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.support.v4.app.Fragment;
-import android.support.v7.app.ActionBarActivity;
 import android.text.format.Time;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -13,9 +16,12 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.ListView;
+import android.widget.Toast;
 
+import org.apache.http.protocol.HTTP;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -40,10 +46,8 @@ public class ForecastFragment extends Fragment {
     private final String LOG_TAG = ForecastFragment.class.getSimpleName();
     public ArrayAdapter<String> adapter;
 
-    public ForecastFragment() {
 
-
-    }
+    public ForecastFragment() {}
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -59,15 +63,51 @@ public class ForecastFragment extends Fragment {
     }
 
     @Override
+    public void onStart() {
+        super.onStart();
+        updateWeather();
+    }
+
+    @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         int id = item.getItemId();
 
+
+
         if(id == R.id.action_refresh){
-            FetchWeatherTask task = new FetchWeatherTask();
-            task.execute("94043");
+            updateWeather();
+            return true;
+        }else if(id == R.id.action_showLocation){
+            showLocation();
             return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    private void showLocation() {
+        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getActivity());
+        String locationFromSettings = sharedPref.getString(getString(R.string.pref_location_key), getString(R.string.pref_location_default));
+
+        System.out.println("Show location in map: " + locationFromSettings);
+
+        Uri.Builder geoLocation = new Uri.Builder();
+        geoLocation.scheme("geo")
+                .appendQueryParameter("q", locationFromSettings);
+
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setData(geoLocation.build());
+        System.out.println(geoLocation.build());
+        if (intent.resolveActivity(getActivity().getPackageManager()) != null) {
+            System.out.println("Starting Intent");
+            startActivity(intent);
+        }
+    }
+
+    private void updateWeather() {
+        FetchWeatherTask task = new FetchWeatherTask();
+        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getActivity());
+        String locationFromSettings = sharedPref.getString(getString(R.string.pref_location_key), getString(R.string.pref_location_default));
+        task.execute(locationFromSettings);
     }
 
     @Override
@@ -75,22 +115,21 @@ public class ForecastFragment extends Fragment {
                              Bundle savedInstanceState) {
         View rootView = inflater.inflate(R.layout.fragment_main, container, false);
 
-        String[] forecastArray = {"Today - Sunny - 83/66",
-                "Tomorrow - Foggy - 83/66",
-                "Weds - Cloudy - 83/66",
-                "Thursday - Rainy - 83/66",
-                "Friday - Sunny - 83/66",
-                "Saturday - Foggy - 83/66",
-                "Sunday - Rainy - 83/66",
-                "Monday - Cloudy - 83/66",
-                "Tuesday - Rainy - 83/66",
-                "Wednesday - Sunny - 83/66"};
-
-        List<String> weekForecast = new ArrayList<String>(Arrays.asList(forecastArray));
-
-        adapter = new ArrayAdapter<String>(getActivity(), R.layout.list_item_forecast, R.id.list_item_forecast_textview, weekForecast);
+        adapter = new ArrayAdapter<String>(getActivity(), R.layout.list_item_forecast, R.id.list_item_forecast_textview, new ArrayList<String>());
         ListView listView = (ListView) rootView.findViewById(R.id.listView_forecast);
         listView.setAdapter(adapter);
+        listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                // Make Toast for debugging
+                //Toast.makeText(getActivity(), adapter.getItem(position), Toast.LENGTH_LONG).show();
+
+                // Executed in an Activity, so 'this' is the Context
+                Intent detailListItem = new Intent(getActivity(), DetailActivity.class);
+                detailListItem.putExtra(Intent.EXTRA_TEXT, adapter.getItem(position));
+                startActivity(detailListItem);
+            }
+        });
 
         return rootView;
     }
@@ -119,7 +158,7 @@ public class ForecastFragment extends Fragment {
         @Override
         protected String[] doInBackground(String... params) {
 
-            int numbDays = 15;
+            int numbDays = 7;
 
             // These two need to be declared outside the try/catch
             // so that they can be closed in the finally block.
@@ -236,7 +275,15 @@ public class ForecastFragment extends Fragment {
         /**
          * Prepare the weather high/lows for presentation.
          */
-        private String formatHighLows(double high, double low) {
+        private String formatHighLows(double high, double low, String unitType) {
+
+            if (unitType.equals(getString(R.string.pref_unit_imperial))) {
+                high = (high * 1.8) + 32;
+                low = (low * 1.8) + 32;
+            } else if (!unitType.equals(getString(R.string.pref_unit_metric))) {
+                Log.d(LOG_TAG, "Unit type not found: " + unitType);
+            }
+
             // For presentation, assume the user doesn't care about tenths of a degree.
             long roundedHigh = Math.round(high);
             long roundedLow = Math.round(low);
@@ -311,7 +358,10 @@ public class ForecastFragment extends Fragment {
                 double high = temperatureObject.getDouble(OWM_MAX);
                 double low = temperatureObject.getDouble(OWM_MIN);
 
-                highAndLow = formatHighLows(high, low);
+                SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getActivity());
+                String unitFromSettings = sharedPref.getString(getString(R.string.pref_unit_key), getString(R.string.pref_unit_metric));
+
+                highAndLow = formatHighLows(high, low, unitFromSettings);
                 resultStrs[i] = day + " - " + description + " - " + highAndLow;
             }
 
