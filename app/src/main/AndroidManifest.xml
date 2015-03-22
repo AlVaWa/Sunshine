@@ -33,7 +33,9 @@
                     <meta-data
                         android:name="android.support.PARENT_ACTIVITY"
                         android:value="com.waageweb.sunshine.app.MainActivity" />
-                </activity>
+        </activity>
+        <provider android:name=".data.WeatherProvider" android:authorities="com.waageweb.sunshine.app">
+    </provider>
     </application>
 
 </manifest>
